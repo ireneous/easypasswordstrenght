@@ -13,4 +13,4 @@ How to use
 Open the page in your browser. Type any password into the field. Read the score and follow the tips.
 
 Tech
-Pure HTML, CSS, and JavaScript. No backend. No data stored.
+Pure HTML. No backend. No data stored.
