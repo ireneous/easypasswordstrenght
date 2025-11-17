@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Password Strength Checker</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <style>
+    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,"Helvetica Neue",Arial;margin:24px;background:#f6f7fb;color:#101217}
+    .card{max-width:720px;margin:0 auto;background:#fff;border-radius:12px;padding:20px;box-shadow:0 8px 24px rgba(16,18,23,0.06)}
+    h1{font-size:20px;margin:0 0 12px}
+    label{display:block;margin-bottom:8px;font-weight:600}
+    input[type="password"]{width:100%;padding:12px;border:1px solid #d7dbe6;border-radius:8px;font-size:15px}
+    .meter{height:12px;background:#e9eef8;border-radius:8px;margin-top:12px;overflow:hidden}
+    .meter-bar{height:100%;width:0%;background:linear-gradient(90deg,#ff6b6b,#ffd166);transition:width .25s ease}
+    .score{margin-top:10px;font-weight:700}
+    .props{margin-top:12px;display:flex;gap:8px;flex-wrap:wrap}
+    .chip{padding:8px 10px;border-radius:999px;background:#f0f4ff;color:#163c7a;font-size:13px}
+    .advice{margin-top:12px;background:#f8fcff;border-left:4px solid #7cc4ff;padding:12px;border-radius:6px}
+    .list{margin:8px 0 0;padding-left:18px}
+    small{color:#556}
+    footer{margin-top:18px;font-size:13px;color:#556}
+  </style>
+</head>
+<body>
+  <div class="card" role="main">
+    <h1>Password Strength Checker</h1>
+    <label for="pw">Enter password</label>
+    <input id="pw" type="password" autocomplete="new-password" placeholder="Type a password" />
+    <div class="meter" aria-hidden="true"><div id="bar" class="meter-bar"></div></div>
+    <div class="score" id="score">Strength: —</div>
+
+    <div class="props" id="props"></div>
+
+    <div class="advice" id="advice" aria-live="polite">
+      <strong>Tip</strong>
+      <div id="adviceText">Use at least 12 characters, mix types, avoid common words.</div>
+    </div>
+
+    <footer>
+      <small>Local client check only. Do not paste real passwords used on live accounts.</small>
+    </footer>
+  </div>
+
+  <script>
+    // Basic common passwords list to block obvious choices
+    const common = new Set([
+      "123456","password","12345678","qwerty","123456789","12345","1234","111111",
+      "1234567","dragon","123123","baseball","abc123","letmein","monkey","football",
+      "iloveyou","admin","welcome","password1"
+    ]);
+
+    const pw = document.getElementById('pw');
+    const bar = document.getElementById('bar');
+    const scoreText = document.getElementById('score');
+    const props = document.getElementById('props');
+    const adviceText = document.getElementById('adviceText');
+
+    pw.addEventListener('input', () => {
+      const s = analyzePassword(pw.value);
+      render(s);
+    });
+
+    function analyzePassword(password) {
+      const length = password.length;
+      const lower = /[a-z]/.test(password);
+      const upper = /[A-Z]/.test(password);
+      const digit = /[0-9]/.test(password);
+      const symbol = /[^A-Za-z0-9]/.test(password);
+      const repeat = /(.)\1\1/.test(password); // three same chars in a row
+      const sequential = hasSequential(password);
+      const isCommon = common.has(password.toLowerCase());
+      const entropy = estimateEntropy(password, {lower,upper,digit,symbol});
+      // score 0..4
+      let score = 0;
+      if (length >= 8) score++;
+      if (length >= 12) score++;
+      if ((lower && upper) || (symbol && (lower || upper))) score++;
+      if (digit && (lower || upper) && symbol) score++;
+      // penalize
+      if (repeat || sequential || isCommon) score = Math.max(0, score - 1);
+
+      // clamp
+      score = Math.max(0, Math.min(4, score));
+
+      // textual label
+      const labels = ["Very weak","Weak","Fair","Strong","Very strong"];
+
+      // suggestions
+      const suggestions = [];
+      if (isCommon) suggestions.push("Avoid common passwords");
+      if (length < 12) suggestions.push("Make it at least 12 characters");
+      if (!lower || !upper) suggestions.push("Mix lowercase and uppercase letters");
+      if (!digit) suggestions.push("Add numbers");
+      if (!symbol) suggestions.push("Add special characters like !@#$");
+      if (repeat) suggestions.push("Avoid repeated characters like aaa or 111");
+      if (sequential) suggestions.push("Avoid sequences like 12345 or abcde");
+
+      return {
+        password,
+        length,
+        lower, upper, digit, symbol,
+        repeat, sequential, isCommon,
+        entropy: Math.round(entropy),
+        score,
+        label: labels[score],
+        suggestions
+      };
+    }
+
+    function estimateEntropy(pw, flags) {
+      // rough entropy estimate: log2(pool^length)
+      let pool = 0;
+      if (flags.lower) pool += 26;
+      if (flags.upper) pool += 26;
+      if (flags.digit) pool += 10;
+      if (flags.symbol) pool += 32; // approximation
+      if (pool === 0) return 0;
+      return Math.log2(Math.pow(pool, Math.max(1, pw.length)));
+    }
+
+    function hasSequential(s) {
+      if (!s || s.length < 3) return false;
+      const seq = 'abcdefghijklmnopqrstuvwxyz0123456789';
+      const sLower = s.toLowerCase();
+      for (let i = 0; i < sLower.length - 2; i++) {
+        const tri = sLower.slice(i, i + 3);
+        if (seq.includes(tri)) return true;
+        if (seq.includes(tri.split('').reverse().join(''))) return true;
+      }
+      return false;
+    }
+
+    function render(res) {
+      // meter
+      const pct = Math.round((res.score / 4) * 100);
+      bar.style.width = pct + '%';
+      // color gradient based on score
+      const colors = [
+        '#ff4d4f', '#ff914d', '#ffd166', '#8bdc7f', '#2ea44f'
+      ];
+      bar.style.background = `linear-gradient(90deg, ${colors[res.score]}, ${colors[Math.min(4,res.score+1)]})`;
+
+      // score text
+      scoreText.textContent = `Strength: ${res.label} — score ${res.score}/4, entropy ≈ ${res.entropy} bits`;
+
+      // properties chips
+      props.innerHTML = '';
+      addChip(`Length: ${res.length}`);
+      if (res.lower) addChip('Has lower');
+      if (res.upper) addChip('Has upper');
+      if (res.digit) addChip('Has digit');
+      if (res.symbol) addChip('Has symbol');
+      if (res.isCommon) addChip('Common password');
+      if (res.repeat) addChip('Repeated chars');
+      if (res.sequential) addChip('Sequential');
+
+      // advice
+      if (res.suggestions.length === 0) {
+        adviceText.textContent = 'Good password. Use a password manager to store it.';
+      } else {
+        adviceText.innerHTML = '<strong>Suggestions</strong><ol class="list">' +
+          res.suggestions.map(x => `<li>${escapeHtml(x)}</li>`).join('') +
+          '</ol>';
+      }
+    }
+
+    function addChip(text) {
+      const d = document.createElement('div');
+      d.className = 'chip';
+      d.textContent = text;
+      props.appendChild(d);
+    }
+
+    function escapeHtml(str) {
+      return str.replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+    }
+
+    // initial render for empty field
+    render(analyzePassword(''));
+  </script>
+</body>
+</html>
